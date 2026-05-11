@@ -141,9 +141,19 @@
     background: linear-gradient(135deg, #d96a8e 0%, #c0537a 100%);
     color: #fff; border: none; border-radius: 8px;
     font-size: 14px; font-weight: 600;
-    cursor: pointer; transition: transform .2s;
+    cursor: pointer; transition: transform .2s, opacity .2s;
   }
   .submit-btn:hover { transform: translateY(-2px); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* 전송 상태 메세지 */
+  .submit-status {
+    text-align: center;
+    font-size: 12px;
+    margin-top: 8px;
+    min-height: 18px;
+    color: #a0667a;
+  }
 
   .messages-list { display: flex; flex-direction: column; gap: 10px; }
   .message-card {
@@ -151,16 +161,12 @@
     padding: 14px 16px;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(255,105,150,0.12);
-    position: relative;
     border-left: 3px solid #ffb3cb;
+    animation: fadeIn 0.4s ease;
   }
-  .message-card:hover .delete-btn { opacity: 1; }
-  .delete-btn {
-    position: absolute; top: 8px; right: 8px;
-    background: #ffd6e4; border: none;
-    width: 22px; height: 22px; border-radius: 50%;
-    cursor: pointer; opacity: 0; transition: opacity .2s;
-    color: #8b3a5a; font-size: 12px;
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
   .msg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
   .msg-name { font-weight: 700; color: #8b3a5a; font-size: 14px; }
@@ -168,6 +174,7 @@
   .msg-content { font-size: 13px; color: #5a3a4a; line-height: 1.6; }
   .msg-time { font-size: 10px; color: #b88898; margin-top: 6px; text-align: right; }
   .empty-msg { text-align: center; padding: 20px; color: #b88898; font-size: 13px; }
+  .loading-msg { text-align: center; padding: 20px; color: #c8a0b0; font-size: 13px; }
 
   .footer {
     padding: 30px 24px;
@@ -238,19 +245,22 @@
       <div class="message-form">
         <div class="form-group">
           <label for="name">성함</label>
-          <input type="text" id="name" placeholder="예) 홍길동">
+          <input type="text" id="name" placeholder="예) 홍길동" maxlength="20">
         </div>
         <div class="form-group">
           <label for="affiliation">소속 (학년 / 부서)</label>
-          <input type="text" id="affiliation" placeholder="예) 3학년 / 교무부">
+          <input type="text" id="affiliation" placeholder="예) 3학년 / 교무부" maxlength="30">
         </div>
         <div class="form-group">
           <label for="message">축하 메세지</label>
-          <textarea id="message" placeholder="서영 선생님께 전하고 싶은 따뜻한 한마디를 남겨주세요 💕"></textarea>
+          <textarea id="message" placeholder="서영 선생님께 전하고 싶은 따뜻한 한마디를 남겨주세요 💕" maxlength="200"></textarea>
         </div>
-        <button class="submit-btn" onclick="addMessage()">💝 축하 메세지 보내기</button>
+        <button class="submit-btn" id="submitBtn">💝 축하 메세지 보내기</button>
+        <p class="submit-status" id="submitStatus"></p>
       </div>
-      <div class="messages-list" id="messagesList"></div>
+      <div class="messages-list" id="messagesList">
+        <p class="loading-msg">메세지를 불러오는 중... 🌸</p>
+      </div>
     </div>
 
     <!-- Footer -->
@@ -260,6 +270,9 @@
     </div>
   </div>
 
+<!-- =====================================================
+     갤러리 + D-Day (기존 코드 유지)
+====================================================== -->
 <script>
   // 갤러리 — 한 장 사진을 9컷 콜라주로
   const galleryEl = document.getElementById('gallery');
@@ -280,86 +293,151 @@
     const now = new Date();
     const diff = weddingDate - now;
     if (diff <= 0) {
-      document.getElementById('dDays').textContent = '0';
-      document.getElementById('dHours').textContent = '0';
-      document.getElementById('dMins').textContent = '0';
-      document.getElementById('dSecs').textContent = '0';
+      ['dDays','dHours','dMins','dSecs'].forEach(id => document.getElementById(id).textContent = '0');
       return;
     }
-    const days = Math.floor(diff / (1000*60*60*24));
-    const hours = Math.floor((diff / (1000*60*60)) % 24);
-    const mins = Math.floor((diff / (1000*60)) % 60);
-    const secs = Math.floor((diff / 1000) % 60);
-    document.getElementById('dDays').textContent = days;
-    document.getElementById('dHours').textContent = hours;
-    document.getElementById('dMins').textContent = mins;
-    document.getElementById('dSecs').textContent = secs;
+    document.getElementById('dDays').textContent  = Math.floor(diff / (1000*60*60*24));
+    document.getElementById('dHours').textContent = Math.floor((diff / (1000*60*60)) % 24);
+    document.getElementById('dMins').textContent  = Math.floor((diff / (1000*60)) % 60);
+    document.getElementById('dSecs').textContent  = Math.floor((diff / 1000) % 60);
   }
   updateDday();
   setInterval(updateDday, 1000);
 
-  // 메세지 기능
-  const STORAGE_KEY = 'wedding_messages_jh_sy';
-  function getMessages() {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  }
-  function saveMessages(list) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  }
-  function renderMessages() {
-    const list = getMessages();
-    const el = document.getElementById('messagesList');
-    if (list.length === 0) {
-      el.innerHTML = '<div class="empty-msg">아직 메세지가 없어요. 첫 메세지를 남겨주세요 🌷</div>';
-      return;
-    }
-    el.innerHTML = list.map((m, i) => `
-      <div class="message-card">
-        <button class="delete-btn" onclick="deleteMessage(${i})">✕</button>
-        <div class="msg-header">
-          <span class="msg-name">${escapeHtml(m.name)}</span>
-          ${m.affiliation ? `<span class="msg-affil">${escapeHtml(m.affiliation)}</span>` : ''}
-        </div>
-        <div class="msg-content">${escapeHtml(m.message).replace(/\n/g,'<br>')}</div>
-        <div class="msg-time">${m.time}</div>
-      </div>
-    `).join('');
-  }
+  // XSS 방지
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
-  function addMessage() {
-    const name = document.getElementById('name').value.trim();
-    const affiliation = document.getElementById('affiliation').value.trim();
-    const message = document.getElementById('message').value.trim();
-    if (!name || !message) {
-      alert('성함과 축하 메세지를 입력해주세요 💕');
+</script>
+
+<!-- =====================================================
+     🔥 Firebase 방명록 (Firestore 실시간 연동)
+     
+     ★ 사용 전 반드시 firebaseConfig를 본인 것으로 교체하세요!
+     Firebase 콘솔 → 프로젝트 설정 → 내 앱 → SDK 설정 및 구성
+====================================================== -->
+<script type="module">
+  import { initializeApp }   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore,
+           collection,
+           addDoc,
+           query,
+           orderBy,
+           onSnapshot,
+           serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ★★★ 여기를 본인의 Firebase Config로 교체하세요 ★★★
+  const firebaseConfig = {
+    apiKey:            "AIzaSyCeWgTVZYFvOkP_J8SQknM8BFi6YE-4oyM",
+    authDomain:        "wedding-a557d.firebaseapp.com",
+    projectId:         "wedding-a557d",
+    storageBucket:     "wedding-a557d.firebasestorage.app",
+    messagingSenderId: "558236403417",
+    appId:             "1:558236403417:web:590d00b6c47e215b9e20c8"
+  };
+  // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
+  // Firebase 초기화
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // DOM
+  const nameEl        = document.getElementById('name');
+  const affiliationEl = document.getElementById('affiliation');
+  const messageEl     = document.getElementById('message');
+  const submitBtn     = document.getElementById('submitBtn');
+  const statusEl      = document.getElementById('submitStatus');
+  const listEl        = document.getElementById('messagesList');
+
+  // ── 메세지 전송 ──────────────────────────────────────
+  submitBtn.addEventListener('click', async () => {
+    const name        = nameEl.value.trim();
+    const affiliation = affiliationEl.value.trim();
+    const message     = messageEl.value.trim();
+
+    if (!name) {
+      showStatus('성함을 입력해주세요 💕', 'error');
+      nameEl.focus(); return;
+    }
+    if (!message) {
+      showStatus('축하 메세지를 입력해주세요 💕', 'error');
+      messageEl.focus(); return;
+    }
+
+    submitBtn.disabled = true;
+    showStatus('전송 중...', 'info');
+
+    try {
+      await addDoc(collection(db, 'guestbook'), {
+        name,
+        affiliation,
+        message,
+        timestamp: serverTimestamp()
+      });
+      nameEl.value = '';
+      affiliationEl.value = '';
+      messageEl.value = '';
+      showStatus('💕 축하 메세지가 전달되었습니다!', 'success');
+    } catch (err) {
+      console.error('전송 오류:', err);
+      showStatus('전송에 실패했습니다. 잠시 후 다시 시도해주세요.', 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  function showStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.style.color = type === 'success' ? '#c0537a'
+                         : type === 'error'   ? '#e06060'
+                         : '#a0667a';
+    if (type === 'success') {
+      setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    }
+  }
+
+  // ── 메세지 실시간 수신 ───────────────────────────────
+  const q = query(collection(db, 'guestbook'), orderBy('timestamp', 'desc'));
+
+  onSnapshot(q, (snapshot) => {
+    if (snapshot.empty) {
+      listEl.innerHTML = '<div class="empty-msg">아직 메세지가 없어요. 첫 메세지를 남겨주세요 🌷</div>';
       return;
     }
-    const now = new Date();
-    const time = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    const list = getMessages();
-    list.unshift({ name, affiliation, message, time });
-    saveMessages(list);
-    document.getElementById('name').value = '';
-    document.getElementById('affiliation').value = '';
-    document.getElementById('message').value = '';
-    renderMessages();
+
+    listEl.innerHTML = '';
+
+    snapshot.forEach((doc) => {
+      const d    = doc.data();
+      const date = d.timestamp?.toDate ? formatDate(d.timestamp.toDate()) : '';
+
+      const card = document.createElement('div');
+      card.className = 'message-card';
+      card.innerHTML = `
+        <div class="msg-header">
+          <span class="msg-name">${escapeHtml(d.name)}</span>
+          ${d.affiliation ? `<span class="msg-affil">${escapeHtml(d.affiliation)}</span>` : ''}
+        </div>
+        <div class="msg-content">${escapeHtml(d.message).replace(/\n/g, '<br>')}</div>
+        <div class="msg-time">${date}</div>
+      `;
+      listEl.appendChild(card);
+    });
+  }, (error) => {
+    console.error('메세지 로드 오류:', error);
+    listEl.innerHTML = '<div class="empty-msg">메세지를 불러올 수 없습니다.</div>';
+  });
+
+  // ── 날짜 포맷 ────────────────────────────────────────
+  function formatDate(date) {
+    const y   = date.getFullYear();
+    const m   = String(date.getMonth() + 1).padStart(2, '0');
+    const d   = String(date.getDate()).padStart(2, '0');
+    const h   = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    return `${y}.${m}.${d} ${h}:${min}`;
   }
-  function deleteMessage(i) {
-    if (!confirm('이 메세지를 삭제하시겠어요?')) return;
-    const list = getMessages();
-    list.splice(i, 1);
-    saveMessages(list);
-    renderMessages();
-  }
-  // 샘플 메세지
-  if (getMessages().length === 0) {
-    saveMessages([
-      { name:'동료 교사 일동', affiliation:'친목회', message:'서영 선생님, 결혼을 진심으로 축하드립니다! 두 분의 앞날에 늘 행복과 사랑이 가득하시길 기도드려요 💐', time:'2026.05.11 09:00' },
-    ]);
-  }
-  renderMessages();
 </script>
 </body>
 </html>
